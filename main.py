@@ -2,7 +2,7 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
-from tools import calculator
+from tools import calculator, faq_lookup
 
 load_dotenv()
 
@@ -28,17 +28,47 @@ calculator_tool = types.Tool(
 )
 
 
+faq_tool = types.Tool(
+    function_declarations=[
+        types.FunctionDeclaration(
+            name="faq_lookup",
+            description=(
+                "Looks up information about customer support topics "
+                "such as refunds, delivery, and support hours."
+            ),
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "topic": types.Schema(
+                        type="STRING",
+                        description="The customer support topic to look up.",
+                    )
+                },
+                required=["topic"],
+            ),
+        )
+    ]
+)
+
+
 def run_agent(user_message: str):
+
     contents = [user_message]
 
     while True:
         response = client.models.generate_content(
-            model="gemini-3.6-flash",
+            model="gemini-3.5-flash",
             contents=contents,
-            config=types.GenerateContentConfig(tools=[calculator_tool]),
+            config=types.GenerateContentConfig(
+                tools=[
+                    calculator_tool,
+                    faq_tool,
+                ]
+            ),
         )
 
         model_content = response.candidates[0].content
+
         contents.append(model_content)
 
         function_call = None
@@ -48,47 +78,29 @@ def run_agent(user_message: str):
                 function_call = part.function_call
                 break
 
+        # No tool requested → final answer
         if function_call is None:
             return response.text
 
-        result = calculator(function_call.args["expression"])
+        # Execute the requested tool
+        if function_call.name == "calculator":
+            result = calculator(function_call.args["expression"])
 
+        elif function_call.name == "faq_lookup":
+            result = faq_lookup(function_call.args["topic"])
+
+        else:
+            raise ValueError(f"Unknown tool: {function_call.name}")
+
+        # Send tool result back to Gemini
         tool_result = types.Part.from_function_response(
-            name=function_call.name, response={"result": result}
+            name=function_call.name,
+            response={"result": result},
         )
 
         contents.append(tool_result)
 
 
-# function_call = response.candidates[0].content.parts[0].function_call
+answer = run_agent("What is the refund policy?")
 
-# print("Tool requested:", function_call.name)
-# print("Arguments:", function_call.args)
-
-# result = calculator(function_call.args["expression"])
-
-# print("Tool result:", result)
-
-# tool_result = types.Part.from_function_response (
-#     name = function_call.name,
-#     response = {
-#         "result": result
-#     }
-# )
-
-# final_response = client.models.generate_content (
-#     model = "gemini-3.6-flash",
-#     contents = [
-#         "What is 25% of 840?",
-#         response.candidates[0].content,
-#         tool_result,
-#     ],
-#     config = types.GenerateContentConfig (
-#         tools = [calculator_tool]
-#     )
-# )
-
-# print(final_response.text)
-
-answer = run_agent("what is 25% of 840?")
 print(answer)
