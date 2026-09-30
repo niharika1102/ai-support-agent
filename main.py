@@ -41,3 +41,24 @@ print("Arguments:", function_call.args)
 result = calculator(function_call.args["expression"])
 
 print("Tool result:", result)
+
+tool_result = types.Part.from_function_response (
+    name = function_call.name,
+    response = {
+        "result": result
+    }
+)
+
+final_response = client.models.generate_content (
+    model = "gemini-3.6-flash",
+    contents = [
+        "What is 25% of 840?",
+        response.candidates[0].content,
+        tool_result,
+    ],
+    config = types.GenerateContentConfig (
+        tools = [calculator_tool]
+    )
+)
+
+print(final_response.text)
