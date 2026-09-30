@@ -50,12 +50,18 @@ faq_tool = types.Tool(
     ]
 )
 
+tools = {
+    "calculator": calculator,
+    "faq_lookup": faq_lookup,
+}
 
 def run_agent(user_message: str):
 
     contents = [user_message]
 
-    while True:
+    max_iterations = 5
+
+    for _ in range(max_iterations):
         response = client.models.generate_content(
             model="gemini-3.5-flash",
             contents=contents,
@@ -82,15 +88,14 @@ def run_agent(user_message: str):
         if function_call is None:
             return response.text
 
-        # Execute the requested tool
-        if function_call.name == "calculator":
-            result = calculator(function_call.args["expression"])
+        tool = tools.get(function_call.name)
 
-        elif function_call.name == "faq_lookup":
-            result = faq_lookup(function_call.args["topic"])
+        if tool is None:
+            raise ValueError(
+                f"Unknown tool: {function_call.name}"
+            )
 
-        else:
-            raise ValueError(f"Unknown tool: {function_call.name}")
+        result = tool(**function_call.args)
 
         # Send tool result back to Gemini
         tool_result = types.Part.from_function_response(
@@ -99,6 +104,8 @@ def run_agent(user_message: str):
         )
 
         contents.append(tool_result)
+    
+    raise RuntimeError("Agent has reached its maximum number of iterations.")
 
 
 answer = run_agent("What is the refund policy?")
